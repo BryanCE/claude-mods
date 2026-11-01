@@ -1,0 +1,7 @@
+{
+  "name": "bar",
+  "version": "0.1.0",
+  "description": "/bar opens and closes a color-coded context reading above the prompt",
+  "author": { "name": "Bryan" },
+  "types": "./types/index.d.ts"
+}

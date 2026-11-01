@@ -1,0 +1,4 @@
+{
+  "description": "The bar hooks module",
+  "modules": ["./register.tsx"]
+}

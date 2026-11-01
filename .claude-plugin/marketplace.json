@@ -1,0 +1,16 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "Bryan"
+  },
+  "metadata": {
+    "description": "Bryan's mods for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "bar",
+      "source": "./plugins/bar",
+      "description": "A color-coded context usage bar above the prompt, toggled with /bar"
+    }
+  ]
+}
