@@ -11,6 +11,6 @@ export type ContextSnapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    bar: { snapshot: ContextSnapshot | null; isOpen: boolean }
+    bar: { snapshot: ContextSnapshot | null; isOpen: boolean; effort: string | null }
   }
 }

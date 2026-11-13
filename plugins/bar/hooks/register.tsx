@@ -5,6 +5,7 @@ import type { ContextSlice, ContextSnapshot } from '../types'
 
 const snapshot = atom({ plugin: 'bar', key: 'snapshot' } as const, null)
 const isOpen = atom({ plugin: 'bar', key: 'isOpen' } as const, false)
+const effort = atom({ plugin: 'bar', key: 'effort' } as const, null)
 
 type Cell = { char: string; color: string | null }
 
@@ -153,6 +154,16 @@ export const register: Register = on => {
     return result
   })
 
+  // The effort the main loop's request carries, after the session setting and
+  // any downgrade for the model; absent on a model without effort.
+  on('turn.step', async function* ($, e, next) {
+    if (e.agentId === undefined) {
+      await update($, effort, () => (e.effort === undefined ? null : `${e.effort}`))
+    }
+
+    return yield* next(e)
+  })
+
   on('command.run', { command: 'bar' }, async $ => {
     const open = !(await read($, isOpen))
     if (open) {
@@ -165,6 +176,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const snap = await read($, snapshot)
+    const level = await read($, effort)
 
     if (e.props.hasSurvey || snap === null || !(await read($, isOpen))) {
       return next(e)
@@ -182,6 +194,7 @@ export const register: Register = on => {
           <Text bold color={badgeColor(snap)}>{`${Math.round(progress(snap) * 100)}% `}</Text>
           <Text bold>{headline(snap)}</Text>
           <Text dimColor>{`   window ${kTokens(snap.maxTokens)} · ${snap.model}`}</Text>
+          {level !== null && <Text dimColor>{` · ${level}`}</Text>}
         </Text>
         <Text wrap="truncate">
           {runs.map(run =>

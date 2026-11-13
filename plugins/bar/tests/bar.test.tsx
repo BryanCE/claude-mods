@@ -115,3 +115,36 @@ test('the bar reads the context again when a row is stored', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /Messages 5\.0k/ })).toBeDefined()
   await ui.unmount()
 })
+
+test('the bar shows the effort the main loop sent, after the model', async ($, on) => {
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: 73000, window: 1000000, percent: 7, breakdown: BREAKDOWN },
+      rateLimits: [],
+    },
+  }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+  // A stub model that answers whole, streaming no chunks.
+  // oxlint-disable-next-line require-yield
+  on('turn.step', async function* (_$, e) {
+    return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  const step = { turnId: 't1', index: 0, model: 'opus', messageCount: 1 }
+
+  await $.command.run(RUN)
+  await Array.fromAsync($.turn.step({ ...step, effort: 'xhigh' }))
+  await Array.fromAsync($.turn.step({ ...step, effort: 'low', agentId: 'agent-1' }))
+
+  const ui = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /^ · xhigh$/ })).toBeDefined()
+  await ui.unmount()
+
+  await Array.fromAsync($.turn.step(step))
+  const plain = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
+  expect(await plain.find({ type: 'Text', text: /^ · / })).toBeUndefined()
+  await plain.unmount()
+})
