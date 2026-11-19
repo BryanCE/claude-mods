@@ -7,6 +7,9 @@ const snapshot = atom({ plugin: 'bar', key: 'snapshot' } as const, null)
 const isOpen = atom({ plugin: 'bar', key: 'isOpen' } as const, false)
 const effort = atom({ plugin: 'bar', key: 'effort' } as const, null)
 
+// The open choice is the user's, kept in the plugin's store so it outlives /clear.
+const OPEN_KEY = 'isOpen'
+
 type Cell = { char: string; color: string | null }
 
 const FREE: Cell = { char: '░', color: null }
@@ -131,6 +134,8 @@ export const register: Register = on => {
       name: 'bar',
       description: 'Open or close the color-coded context bar above the prompt',
     })
+    const stored = await $.store.get(OPEN_KEY)
+    await update($, isOpen, () => stored === true)
     await refresh($)
 
     return result
@@ -170,6 +175,7 @@ export const register: Register = on => {
       await refresh($)
     }
     await update($, isOpen, () => open)
+    await $.store.set(OPEN_KEY, open)
 
     return { text: open ? 'Context bar open.' : 'Context bar closed.' }
   })

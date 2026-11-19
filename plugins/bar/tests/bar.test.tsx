@@ -44,7 +44,21 @@ const BREAKDOWN: SessionContextBreakdown = {
   apiUsage: null,
 }
 
+type On = Parameters<Parameters<typeof test>[1]>[1]
+
+// The plugin's store on disk, held in memory for one test.
+const stubStore = (on: On): Map<string, unknown> => {
+  const kept = new Map<string, unknown>()
+  on('store.get', (_$, e) => ({ value: kept.get(e.key) }))
+  on('store.set', (_$, e) => {
+    kept.set(e.key, e.value)
+    return { value: undefined }
+  })
+  return kept
+}
+
 test('/bar opens and closes a reading against the auto-compact window', async ($, on) => {
+  stubStore(on)
   on('session.usage', () => ({
     value: {
       startedAt: 0,
@@ -80,9 +94,39 @@ test('/bar opens and closes a reading against the auto-compact window', async ($
   await ui.unmount()
 })
 
+// /clear starts a new session with fresh state; only the store carries the choice.
+test('a new session opens the bar the store says was left open', async ($, on) => {
+  const store = stubStore(on)
+  store.set('isOpen', true)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.usage', () => ({
+    value: {
+      startedAt: 0,
+      context: { tokens: 73000, window: 1000000, percent: 7, breakdown: BREAKDOWN },
+      rateLimits: [],
+    },
+  }))
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+  const open = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
+  expect(await open.find({ type: 'Text', text: /Auto-compact at/ })).toBeDefined()
+  await open.unmount()
+
+  const closed = await $.command.run(RUN)
+  expect(closed.text).toBe('Context bar closed.')
+  expect(store.get('isOpen')).toBe(false)
+})
+
 // No event follows a compaction's install, so the bar reads the compacted
 // conversation when the next row, here a prompt, is stored.
 test('the bar reads the context again when a row is stored', async ($, on) => {
+  stubStore(on)
   const COMPACTED: SessionContextBreakdown = {
     ...BREAKDOWN,
     categories: BREAKDOWN.categories.map(c => (c.name === 'Messages' ? { ...c, tokens: 5000 } : c)),
@@ -117,6 +161,7 @@ test('the bar reads the context again when a row is stored', async ($, on) => {
 })
 
 test('the bar shows the effort the main loop sent, after the model', async ($, on) => {
+  stubStore(on)
   on('session.usage', () => ({
     value: {
       startedAt: 0,
