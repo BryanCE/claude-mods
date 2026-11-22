@@ -7,8 +7,15 @@ const snapshot = atom({ plugin: 'bar', key: 'snapshot' } as const, null)
 const isOpen = atom({ plugin: 'bar', key: 'isOpen' } as const, false)
 const effort = atom({ plugin: 'bar', key: 'effort' } as const, null)
 
-// The open choice is the user's, kept in the plugin's store so it outlives /clear.
+// Session state starts over on /clear, so the open flag is also kept in the
+// store, which outlives the session.
 const OPEN_KEY = 'isOpen'
+
+// The thinking level before the first request names one: the effortLevel setting.
+const readEffortSetting = async ($: EngineInterface): Promise<string | null> => {
+  const level = await $.settings.read({ key: 'effortLevel' })
+  return typeof level === 'string' ? level : null
+}
 
 type Cell = { char: string; color: string | null }
 
@@ -136,6 +143,8 @@ export const register: Register = on => {
     })
     const stored = await $.store.get(OPEN_KEY)
     await update($, isOpen, () => stored === true)
+    const level = await readEffortSetting($)
+    await update($, effort, current => current ?? level)
     await refresh($)
 
     return result
@@ -199,8 +208,9 @@ export const register: Register = on => {
         <Text wrap="truncate">
           <Text bold color={badgeColor(snap)}>{`${Math.round(progress(snap) * 100)}% `}</Text>
           <Text bold>{headline(snap)}</Text>
-          <Text dimColor>{`   window ${kTokens(snap.maxTokens)} · ${snap.model}`}</Text>
-          {level !== null && <Text dimColor>{` · ${level}`}</Text>}
+          <Text>{'   '}</Text>
+          <Text bold color="claude">{snap.model}</Text>
+          {level === null ? null : <Text bold color="suggestion">{` ${level}`}</Text>}
         </Text>
         <Text wrap="truncate">
           {runs.map(run =>

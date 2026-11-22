@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
-import type { SessionContextBreakdown } from 'claude-code'
+import type { On, SessionContextBreakdown } from 'claude-code'
 
 const BAND = {
   component: 'AbovePrompt',
   props: {
     hasSurvey: false,
+    isCollapsed: false,
     isWorking: false,
     maxRows: 10,
     bodyColumns: 80,
@@ -44,7 +45,12 @@ const BREAKDOWN: SessionContextBreakdown = {
   apiUsage: null,
 }
 
-type On = Parameters<Parameters<typeof test>[1]>[1]
+// Runs a streamed call to its end.
+const drain = async (stream: AsyncIterable<unknown>): Promise<void> => {
+  for await (const _ of stream) {
+    // the chunks are not under test
+  }
+}
 
 // The plugin's store on disk, held in memory for one test.
 const stubStore = (on: On): Map<string, unknown> => {
@@ -59,6 +65,9 @@ const stubStore = (on: On): Map<string, unknown> => {
 
 test('/bar opens and closes a reading against the auto-compact window', async ($, on) => {
   stubStore(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('settings.read', () => ({ value: { effortLevel: 'high' } }))
   on('session.usage', () => ({
     value: {
       startedAt: 0,
@@ -71,6 +80,7 @@ test('/bar opens and closes a reading against the auto-compact window', async ($
     return <Box />
   })
 
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
   const opened = await $.command.run(RUN)
   expect(opened.text).toBe('Context bar open.')
 
@@ -79,7 +89,9 @@ test('/bar opens and closes a reading against the auto-compact window', async ($
     expect(await ui.find({ type: 'Text', text: /^20% $/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /73\.0k used · 294\.0k left · Auto-compact at 367\.0k/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /┃/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /window 400\.0k · opus/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /window/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^opus$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^ high$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Messages 50\.0k/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Tools 20\.0k/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Buffer 33\.0k/ })).toBeDefined()
@@ -100,6 +112,7 @@ test('a new session opens the bar the store says was left open', async ($, on) =
   store.set('isOpen', true)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('settings.read', () => ({ value: {} }))
   on('session.usage', () => ({
     value: {
       startedAt: 0,
@@ -181,15 +194,15 @@ test('the bar shows the effort the main loop sent, after the model', async ($, o
   const step = { turnId: 't1', index: 0, model: 'opus', messageCount: 1 }
 
   await $.command.run(RUN)
-  await Array.fromAsync($.turn.step({ ...step, effort: 'xhigh' }))
-  await Array.fromAsync($.turn.step({ ...step, effort: 'low', agentId: 'agent-1' }))
+  await drain($.turn.step({ ...step, effort: 'xhigh' }))
+  await drain($.turn.step({ ...step, effort: 'low', agentId: 'agent-1' }))
 
   const ui = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /^ · xhigh$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ xhigh$/ })).toBeDefined()
   await ui.unmount()
 
-  await Array.fromAsync($.turn.step(step))
+  await drain($.turn.step(step))
   const plain = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
-  expect(await plain.find({ type: 'Text', text: /^ · / })).toBeUndefined()
+  expect(await plain.find({ type: 'Text', text: /^ (xhigh|low)$/ })).toBeUndefined()
   await plain.unmount()
 })
