@@ -67,6 +67,7 @@ test('/bar opens and closes a reading against the auto-compact window', async ($
   stubStore(on)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.model', () => ({ value: 'opus' }))
   on('settings.read', () => ({ value: { effortLevel: 'high' } }))
   on('session.usage', () => ({
     value: {
@@ -111,6 +112,7 @@ test('a new session opens the bar the store says was left open', async ($, on) =
   const store = stubStore(on)
   store.set('isOpen', true)
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: 'opus' }))
   on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('settings.read', () => ({ value: {} }))
   on('session.usage', () => ({
@@ -205,4 +207,38 @@ test('the bar shows the effort the main loop sent, after the model', async ($, o
   const plain = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
   expect(await plain.find({ type: 'Text', text: /^ (xhigh|low)$/ })).toBeUndefined()
   await plain.unmount()
+})
+
+test('/effort and /model move the level without waiting for a request', async ($, on) => {
+  stubStore(on)
+  const saved = { effortLevel: 'high', modelSettings: { 'claude-opus-5-5': { effortLevel: 'high' }, 'claude-fable-5-2': { effortLevel: 'medium' } } }
+  let model = 'claude-opus-5-5'
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('session.model', () => ({ value: model }))
+  on('settings.read', () => ({ value: saved }))
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { tokens: 73000, window: 1000000, percent: 7, breakdown: BREAKDOWN }, rateLimits: [] },
+  }))
+  on('command.run', (_$, e) =>
+    e.command === 'effort' ? { text: `Set effort level to ${e.args}` } : { text: 'Set model' },
+  )
+  on('ui.render', ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box />
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.command.run(RUN)
+
+  await $.command.run({ ...RUN, command: 'effort', args: 'low' })
+  const ui = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /^ low$/ })).toBeDefined()
+  await ui.unmount()
+
+  model = 'Fable 5.2'
+  await $.command.run({ ...RUN, command: 'model', args: '' })
+  const after = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
+  expect(await after.find({ type: 'Text', text: /^ medium$/ })).toBeDefined()
+  await after.unmount()
 })

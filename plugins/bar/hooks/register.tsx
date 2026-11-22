@@ -11,10 +11,36 @@ const effort = atom({ plugin: 'bar', key: 'effort' } as const, null)
 // store, which outlives the session.
 const OPEN_KEY = 'isOpen'
 
-// The thinking level before the first request names one: the effortLevel setting.
+const LEVEL = /effort level to (\w+)/i
+
+const levelOf = (value: unknown): string | null => {
+  if (typeof value !== 'object' || value === null || !('effortLevel' in value)) return null
+  return typeof value.effortLevel === 'string' ? value.effortLevel : null
+}
+
+const slug = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+
+// The thinking level before a request names one: the current model's entry in
+// modelSettings, matched by id or by the name /model shows, else effortLevel.
 const readEffortSetting = async ($: EngineInterface): Promise<string | null> => {
+  const model = slug(await $.session.model())
+  const perModel = await $.settings.read({ key: 'modelSettings' })
+  if (typeof perModel === 'object' && perModel !== null) {
+    const entry = Object.entries(perModel).find(([id]) => slug(id) === model || slug(id).includes(model))
+    const level = entry === undefined ? null : levelOf(entry[1])
+    if (level !== null) return level
+  }
   const level = await $.settings.read({ key: 'effortLevel' })
   return typeof level === 'string' ? level : null
+}
+
+// /effort and /model change the level at once; the bar follows without
+// waiting for the next request. The command's own line names the level when
+// it set one; otherwise the setting it saved does.
+const followCommand = async ($: EngineInterface, text: string | undefined): Promise<void> => {
+  const named = text === undefined ? null : (LEVEL.exec(text)?.[1] ?? null)
+  const level = named ?? (await readEffortSetting($))
+  await update($, effort, current => level ?? current)
 }
 
 type Cell = { char: string; color: string | null }
@@ -176,6 +202,18 @@ export const register: Register = on => {
     }
 
     return yield* next(e)
+  })
+
+  on('command.run', { command: 'effort' }, async ($, e, next) => {
+    const result = await next(e)
+    await followCommand($, result.text)
+    return result
+  })
+
+  on('command.run', { command: 'model' }, async ($, e, next) => {
+    const result = await next(e)
+    await followCommand($, undefined)
+    return result
   })
 
   on('command.run', { command: 'bar' }, async $ => {
