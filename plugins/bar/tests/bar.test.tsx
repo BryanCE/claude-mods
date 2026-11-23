@@ -107,13 +107,13 @@ test('/bar opens and closes a reading against the auto-compact window', async ($
   await ui.unmount()
 })
 
-// /clear starts a new session with fresh state; only the store carries the choice.
-test('a new session opens the bar the store says was left open', async ($, on) => {
+// /clear starts a new session with fresh state and raises only the classic
+// SessionStart, never session.start; only the store carries the choice.
+test('/clear opens the bar the store says was left open', async ($, on) => {
   const store = stubStore(on)
   store.set('isOpen', true)
-  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('classic.SessionStart', () => ({}))
   on('session.model', () => ({ value: 'opus' }))
-  on('command.register', (_$, e) => ({ value: { command: e.name } }))
   on('settings.read', () => ({ value: {} }))
   on('session.usage', () => ({
     value: {
@@ -127,7 +127,7 @@ test('a new session opens the bar the store says was left open', async ($, on) =
     return <Box />
   })
 
-  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.classic.SessionStart({ source: 'clear' })
 
   const open = await $.ui.mount({ plugin: 'bar', surface: 'terminal', ...BAND })
   expect(await open.find({ type: 'Text', text: /Auto-compact at/ })).toBeDefined()

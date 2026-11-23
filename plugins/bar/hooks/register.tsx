@@ -8,7 +8,7 @@ const isOpen = atom({ plugin: 'bar', key: 'isOpen' } as const, false)
 const effort = atom({ plugin: 'bar', key: 'effort' } as const, null)
 
 // Session state starts over on /clear, so the open flag is also kept in the
-// store, which outlives the session.
+// store, which outlives the session; restore reads it back.
 const OPEN_KEY = 'isOpen'
 
 const LEVEL = /effort level to (\w+)/i
@@ -85,6 +85,16 @@ const refresh = async ($: EngineInterface): Promise<void> => {
   if (breakdown !== undefined) {
     await update($, snapshot, () => toSnapshot(breakdown))
   }
+}
+
+// Fills a session's fresh state: the open choice from the store, the effort
+// from settings, and a first reading of the context.
+const restore = async ($: EngineInterface): Promise<void> => {
+  const stored = await $.store.get(OPEN_KEY)
+  await update($, isOpen, () => stored === true)
+  const level = await readEffortSetting($)
+  await update($, effort, current => current ?? level)
+  await refresh($)
 }
 
 const kTokens = (n: number): string => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`)
@@ -167,11 +177,16 @@ export const register: Register = on => {
       name: 'bar',
       description: 'Open or close the color-coded context bar above the prompt',
     })
-    const stored = await $.store.get(OPEN_KEY)
-    await update($, isOpen, () => stored === true)
-    const level = await readEffortSetting($)
-    await update($, effort, current => current ?? level)
-    await refresh($)
+    await restore($)
+
+    return result
+  })
+
+  // session.start fires once per process, never on /clear; the classic
+  // SessionStart fires for every session, the one /clear starts included.
+  on('classic.SessionStart', async ($, e, next) => {
+    const result = await next(e)
+    await restore($)
 
     return result
   })
